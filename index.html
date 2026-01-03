@@ -30,18 +30,36 @@
     <script type="text/babel">
         const { useState, useEffect, useCallback, useMemo } = React;
 
-        // --- Firebase Setup ---
-        // Note: These variables are automatically handled by the environment.
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // --- CONFIGURATION SECTION ---
+        // If you are hosting on GitHub and want to save streaks to the cloud,
+        // create a Firebase project and paste your config object here:
+        // const myCustomConfig = { apiKey: "...", authDomain: "...", ... };
+        const myCustomConfig = null; 
+
+        let firebaseConfig = null;
+        try {
+            if (myCustomConfig) {
+                firebaseConfig = myCustomConfig;
+            } else if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+            }
+        } catch (e) {
+            console.error("Firebase config error:", e);
+        }
+
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sarkar-sudoku-saga';
         
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
+        // Initialize Firebase only if config is available
+        let auth = null;
+        let db = null;
+        if (firebaseConfig && firebaseConfig.apiKey) {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            auth = firebase.auth();
+            db = firebase.firestore();
         }
-        const auth = firebase.auth();
-        const db = firebase.firestore();
 
-        // Helper for icons in browser React
         const Icon = ({ name, size = 20, className = "", fill = "none" }) => {
             return <i data-lucide={name} className={className} style={{ width: size, height: size, stroke: 'currentColor', fill: fill }}></i>;
         };
@@ -57,26 +75,38 @@
             const [difficulty, setDifficulty] = useState('Easy');
             const [isGameWon, setIsGameWon] = useState(false);
             const [mistakes, setMistakes] = useState(0);
+            
+            // Streak State
             const [streak, setStreak] = useState(0);
             const [lastCompletedDate, setLastCompletedDate] = useState("");
 
-            // 1. Initialize Auth
+            // 1. Initialize Auth / Local Loading
             useEffect(() => {
-                const initAuth = async () => {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await auth.signInWithCustomToken(__initial_auth_token);
-                    } else {
-                        await auth.signInAnonymously();
+                if (auth) {
+                    const initAuth = async () => {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    };
+                    initAuth();
+                    const unsubscribe = auth.onAuthStateChanged(setUser);
+                    return () => unsubscribe();
+                } else {
+                    // Fallback to local storage if no Firebase
+                    const saved = localStorage.getItem('sudoku_saga_stats');
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        setStreak(data.streak || 0);
+                        setLastCompletedDate(data.lastDate || "");
                     }
-                };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged(setUser);
-                return () => unsubscribe();
+                }
             }, []);
 
             // 2. Load Streak Stats from Database
             useEffect(() => {
-                if (!user) return;
+                if (!user || !db) return;
                 const statsRef = db.doc(`artifacts/${appId}/users/${user.uid}/stats/gameStats`);
                 const unsubscribe = statsRef.onSnapshot((doc) => {
                     if (doc.exists) {
@@ -88,12 +118,11 @@
                 return () => unsubscribe();
             }, [user]);
 
-            // 3. Refresh Lucide Icons on every render
+            // 3. Refresh Lucide Icons
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
             });
 
-            // --- Sudoku Core Logic ---
             const isValid = (board, row, col, num) => {
                 for (let x = 0; x < 9; x++) if (board[row][x] === num) return false;
                 for (let x = 0; x < 9; x++) if (board[x][col] === num) return false;
@@ -143,9 +172,7 @@
 
             useEffect(() => { generateGame(difficulty); }, [generateGame, difficulty]);
 
-            // --- Win & Database Update ---
             const handleWin = async () => {
-                if (!user) return;
                 const today = new Date().toLocaleDateString('en-CA');
                 const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
                 
@@ -154,10 +181,17 @@
                 else if (lastCompletedDate === yesterday) { newStreak += 1; }
                 else { newStreak = 1; }
 
-                await db.doc(`artifacts/${appId}/users/${user.uid}/stats/gameStats`).set({
-                    streak: newStreak,
-                    lastDate: today
-                }, { merge: true });
+                if (user && db) {
+                    await db.doc(`artifacts/${appId}/users/${user.uid}/stats/gameStats`).set({
+                        streak: newStreak,
+                        lastDate: today
+                    }, { merge: true });
+                } else {
+                    // Fallback to localStorage for GitHub Pages without Firebase
+                    localStorage.setItem('sudoku_saga_stats', JSON.stringify({ streak: newStreak, lastDate: today }));
+                    setStreak(newStreak);
+                    setLastCompletedDate(today);
+                }
                 setIsGameWon(true);
             };
 
@@ -241,7 +275,7 @@
                                     return (
                                         <div key={`${r}-${c}`} onClick={() => setSelectedCell([r, c])} className={`relative flex items-center justify-center text-xl md:text-2xl cursor-pointer aspect-square ${bg} ${borders} ${isInitial ? 'font-bold text-slate-900' : (isSelected ? 'text-white' : 'text-blue-600')}`}>
                                             {cell !== 0 ? cell : (
-                                                <div className="grid grid-cols-3 w-full h-full p-0.5">
+                                                <div className="grid grid-cols-3 w-full h-full p-0.5 pointer-events-none">
                                                     {[1,2,3,4,5,6,7,8,9].map(n => <div key={n} className="text-[8px] md:text-[10px] text-slate-400 flex items-center justify-center">{notes[r][c].includes(n) ? n : ''}</div>)}
                                                 </div>
                                             )}
@@ -275,11 +309,11 @@
                             <div className="grid grid-cols-2 gap-2">
                                 <button onClick={() => setIsNoteMode(!isNoteMode)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition ${isNoteMode ? 'bg-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}>
                                     <Icon name="pen-tool" size={18} className="mb-1" />
-                                    <span className="text-[10px] font-black">Notes {isNoteMode ? 'ON' : 'OFF'}</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Notes {isNoteMode ? 'ON' : 'OFF'}</span>
                                 </button>
                                 <button onClick={() => { if (initialGrid[selectedCell[0]][selectedCell[1]] === 0) { const g = [...grid]; g[selectedCell[0]][selectedCell[1]] = 0; setGrid(g); }}} className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-slate-100 text-slate-600">
                                     <Icon name="eraser" size={18} className="mb-1" />
-                                    <span className="text-[10px] font-black">Erase</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Erase</span>
                                 </button>
                             </div>
                             <button onClick={() => { if (grid[selectedCell[0]][selectedCell[1]] === 0) { const g = [...grid]; g[selectedCell[0]][selectedCell[1]] = solution[selectedCell[0]][selectedCell[1]]; setGrid(g); }}} className="flex items-center justify-center gap-2 w-full p-4 bg-blue-50 rounded-2xl text-blue-700 font-bold">
