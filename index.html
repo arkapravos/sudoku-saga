@@ -19,16 +19,16 @@
         body { 
             font-family: 'Inter', sans-serif; 
             background-color: #fdfbf7; 
-            overscroll-behavior: none; /* Prevents bounce scroll on mobile */
+            overscroll-behavior: none; 
             overflow: hidden;
-            position: fixed; /* Prevents the whole page from moving */
+            position: fixed; 
             width: 100%;
             height: 100%;
         }
 
         .app-container {
             height: 100vh;
-            height: -webkit-fill-available; /* Fix for mobile browser toolbars */
+            height: -webkit-fill-available;
             display: flex;
             flex-direction: column;
             padding: 12px;
@@ -41,19 +41,19 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 0; /* Important for flex-shrink */
+            min-height: 0;
         }
 
         .sudoku-grid {
             aspect-ratio: 1 / 1;
             width: 100%;
-            max-width: min(85vw, 400px);
+            max-width: min(88vw, 420px);
             display: grid;
             grid-template-columns: repeat(9, 1fr);
-            background-color: #1e293b; /* slate-800 */
+            background-color: #0f172a; /* Slate 900 for crisp lines */
             gap: 1px;
-            border: 2px solid #1e293b;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            border: 2px solid #0f172a;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         }
 
         .cell {
@@ -65,7 +65,11 @@
             position: relative;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            transition: all 0.1s ease;
         }
+
+        /* Prevents weird text selection on mobile taps */
+        * { -webkit-touch-callout: none; }
     </style>
 </head>
 <body>
@@ -82,7 +86,7 @@
             const [grid, setGrid] = useState(Array(9).fill(null).map(() => Array(9).fill(0)));
             const [initialGrid, setInitialGrid] = useState(Array(9).fill(null).map(() => Array(9).fill(0)));
             const [solution, setSolution] = useState(Array(9).fill(null).map(() => Array(9).fill(0)));
-            const [notes, setNotes] = useState(Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])));
+            const [notes, setNotes] = useState(Array(9).fill(null).map(() => Array(9).fill(0).map(() => [])));
             const [selectedCell, setSelectedCell] = useState([0, 0]);
             const [isNoteMode, setIsNoteMode] = useState(false);
             const [difficulty, setDifficulty] = useState('Easy');
@@ -91,7 +95,6 @@
             const [streak, setStreak] = useState(0);
             const [lastCompletedDate, setLastCompletedDate] = useState("");
 
-            // Load Streak from Local Storage
             useEffect(() => {
                 const saved = localStorage.getItem('sarkar_sudoku_saga_v2');
                 if (saved) {
@@ -144,7 +147,7 @@
                 }
                 setGrid(puzzle);
                 setInitialGrid(JSON.parse(JSON.stringify(puzzle)));
-                setNotes(Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])));
+                setNotes(Array(9).fill(null).map(() => Array(9).fill(0).map(() => [])));
                 setIsGameWon(false); setMistakes(0);
             }, []);
 
@@ -154,15 +157,12 @@
                 const today = new Date().toLocaleDateString('en-CA');
                 const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
                 let newStreak = streak;
-                
-                if (lastCompletedDate === today) { /* same day, no change */ }
+                if (lastCompletedDate === today) {}
                 else if (lastCompletedDate === yesterday) { newStreak += 1; }
                 else { newStreak = 1; }
-
                 const data = { streak: newStreak, lastDate: today };
                 localStorage.setItem('sarkar_sudoku_saga_v2', JSON.stringify(data));
-                setStreak(newStreak);
-                setLastCompletedDate(today);
+                setStreak(newStreak); setLastCompletedDate(today);
             };
 
             const handleInput = (num) => {
@@ -172,19 +172,15 @@
 
                 if (isNoteMode) {
                     const newNotes = [...notes];
-                    if (newNotes[r][c].includes(num)) {
-                        newNotes[r][c] = newNotes[r][c].filter(n => n !== num);
-                    } else {
-                        newNotes[r][c] = [...newNotes[r][c], num].sort();
-                    }
+                    newNotes[r][c] = newNotes[r][c].includes(num) ? newNotes[r][c].filter(n => n !== num) : [...newNotes[r][c], num].sort();
                     setNotes(newNotes);
                 } else {
+                    const newGrid = [...grid];
+                    newGrid[r][c] = num;
+                    setGrid(newGrid);
+
                     if (num === solution[r][c]) {
-                        const newGrid = [...grid];
-                        newGrid[r][c] = num;
-                        setGrid(newGrid);
-                        
-                        // Professional Note Cleanup
+                        // Correct number placed
                         const newNotes = [...notes];
                         const sR = r - (r % 3), sC = c - (c % 3);
                         for (let i = 0; i < 9; i++) {
@@ -194,12 +190,12 @@
                             newNotes[bi][bj] = newNotes[bi][bj].filter(n => n !== num);
                         }
                         setNotes(newNotes);
-
+                        
                         if (newGrid.every((row, ri) => row.every((cell, ci) => cell === solution[ri][ci]))) {
-                            updateStreak();
-                            setIsGameWon(true);
+                            updateStreak(); setIsGameWon(true);
                         }
                     } else {
+                        // Wrong number stays visible but turns red
                         setMistakes(prev => prev + 1);
                     }
                 }
@@ -207,35 +203,35 @@
 
             const displayStreak = useMemo(() => {
                 if (!lastCompletedDate) return 0;
-                const today = new Date().toLocaleDateString('en-CA');
-                const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+                const today = new Date().toLocaleDateString('en-CA'), yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
                 return (lastCompletedDate === today || lastCompletedDate === yesterday) ? streak : 0;
             }, [streak, lastCompletedDate]);
 
             return (
                 <div className="app-container">
-                    {/* Header bar */}
                     <div className="flex justify-between items-center mb-1">
                         <div>
-                            <h1 className="text-lg font-black text-slate-800 leading-tight">SARKAR SUDOKU</h1>
-                            <p className="text-[10px] text-slate-400 font-bold italic tracking-tight">For Punam with Love</p>
+                            <h1 className="text-xl font-black text-slate-800 leading-tight tracking-tight uppercase">Sarkar Sudoku Saga</h1>
+                            <div className="flex items-center gap-1">
+                                <p className="text-[10px] text-slate-400 font-bold italic tracking-tight leading-none">For Punam with Love</p>
+                                <Icon name="heart" size={10} className="text-rose-400" fill="currentColor" />
+                            </div>
                         </div>
                         <div className="flex gap-4">
                             <div className="text-right">
                                 <p className="text-[8px] font-bold text-slate-400 uppercase">Streak</p>
-                                <div className="flex items-center gap-1 leading-none">
+                                <div className="flex items-center justify-end gap-1 leading-none">
                                     <span className="text-sm font-black text-orange-500">{displayStreak}</span>
                                     <Icon name="flame" size={14} className="text-orange-500" fill="currentColor" />
                                 </div>
                             </div>
                             <div className="text-right">
-                                <p className="text-[8px] font-bold text-slate-400 uppercase">Errors</p>
+                                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Errors</p>
                                 <span className={`text-sm font-black leading-none ${mistakes > 0 ? 'text-red-500' : 'text-slate-800'}`}>{mistakes}/5</span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Controls Row */}
                     <div className="flex justify-between items-center my-2 h-8">
                         <div className="flex gap-1">
                             {['Easy', 'Medium', 'Hard'].map(lvl => (
@@ -244,21 +240,28 @@
                                 </button>
                             ))}
                         </div>
-                        <button onClick={() => generateGame(difficulty)} className="text-slate-400 active:text-slate-800 p-2">
-                            <Icon name="rotate-ccw" size={18} />
-                        </button>
+                        <button onClick={() => generateGame(difficulty)} className="text-slate-400 active:text-slate-800 p-2"><Icon name="rotate-ccw" size={18} /></button>
                     </div>
 
-                    {/* Sudoku Grid */}
                     <div className="sudoku-grid-wrapper">
                         <div className="sudoku-grid relative">
                             {grid.map((row, r) => row.map((cell, c) => {
                                 const isSelected = selectedCell[0] === r && selectedCell[1] === c;
                                 const isSameRC = selectedCell[0] === r || selectedCell[1] === c;
                                 const isInitial = initialGrid[r][c] !== 0;
+                                const isValueMatch = grid[r][c] !== 0 && grid[r][c] === grid[selectedCell[0]][selectedCell[1]];
+                                const isError = !isInitial && cell !== 0 && cell !== solution[r][c];
                                 
-                                let bgClass = isSelected ? "bg-blue-500" : (isSameRC ? "bg-slate-50" : "bg-white");
-                                let textClass = isInitial ? "text-slate-900 font-bold" : (isSelected ? "text-white font-bold" : "text-blue-600");
+                                // UI Theme: Selected cell is white with thick blue ring
+                                let bgClass = "bg-white";
+                                if (isSelected) bgClass = "bg-white ring-4 ring-blue-500 ring-inset z-10"; 
+                                else if (isValueMatch) bgClass = "bg-blue-100"; 
+                                else if (isSameRC) bgClass = "bg-blue-50"; 
+                                
+                                let textClass = "";
+                                if (isInitial) textClass = "text-slate-900 font-bold"; 
+                                else if (isError) textClass = "text-red-600 font-black"; 
+                                else textClass = "text-blue-700 font-semibold"; 
                                 
                                 let borders = "";
                                 if (r % 3 === 0) borders += " border-t-[1.5px] border-t-slate-800";
@@ -269,7 +272,7 @@
                                 return (
                                     <div key={`${r}-${c}`} onClick={() => setSelectedCell([r, c])} className={`cell ${bgClass} ${textClass} ${borders} text-xl sm:text-2xl`}>
                                         {cell !== 0 ? cell : (
-                                            <div className="grid grid-cols-3 w-full h-full p-0.5">
+                                            <div className="grid grid-cols-3 w-full h-full p-0.5 pointer-events-none">
                                                 {[1,2,3,4,5,6,7,8,9].map(n => (
                                                     <div key={n} className="text-[7px] leading-none text-slate-400 flex items-center justify-center">
                                                         {notes[r][c].includes(n) ? n : ''}
@@ -281,43 +284,35 @@
                                 );
                             }))}
 
-                            {/* Overlays */}
                             {isGameWon && (
-                                <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-20">
+                                <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-20 animate-in fade-in duration-300">
                                     <Icon name="trophy" size={48} className="text-yellow-400 mb-2" />
-                                    <h2 className="text-2xl font-black text-slate-800">SAGA COMPLETE</h2>
+                                    <h2 className="text-2xl font-black text-slate-800 uppercase">Saga Complete</h2>
                                     <button onClick={() => generateGame(difficulty)} className="mt-4 bg-slate-800 text-white px-8 py-2 rounded-full font-bold shadow-lg">New Puzzle</button>
                                 </div>
                             )}
                             {mistakes >= 5 && (
                                 <div className="absolute inset-0 bg-red-50/95 flex flex-col items-center justify-center z-20">
-                                    <h2 className="text-2xl font-black text-red-600">SAGA OVER</h2>
+                                    <h2 className="text-2xl font-black text-red-600 tracking-tighter uppercase">Saga Over</h2>
                                     <button onClick={() => generateGame(difficulty)} className="mt-4 bg-red-600 text-white px-8 py-2 rounded-full font-bold shadow-lg">Restart</button>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Control Panel */}
-                    <div className="mt-auto space-y-4 pt-4 pb-2">
-                        {/* Number Pad */}
+                    <div className="mt-auto space-y-3 pt-4 pb-2">
                         <div className="grid grid-cols-9 gap-1 mx-auto max-w-full">
                             {[1,2,3,4,5,6,7,8,9].map(num => (
-                                <button 
-                                    key={num} 
-                                    onClick={() => handleInput(num)} 
-                                    className="aspect-square flex items-center justify-center bg-white rounded-lg border border-slate-200 text-xl font-bold text-blue-600 active:bg-blue-500 active:text-white active:scale-95 transition-all shadow-sm"
-                                >
+                                <button key={num} onClick={() => handleInput(num)} className="aspect-square flex items-center justify-center bg-white rounded-lg border border-slate-200 text-xl font-bold text-blue-700 active:bg-blue-600 active:text-white transition-all shadow-sm">
                                     {num}
                                 </button>
                             ))}
                         </div>
 
-                        {/* Action Buttons */}
-                        <div className="grid grid-cols-3 gap-3 mx-auto max-w-full">
+                        <div className="grid grid-cols-3 gap-3 mx-auto max-w-full pb-1">
                             <button onClick={() => setIsNoteMode(!isNoteMode)} className={`flex flex-col items-center py-3 rounded-2xl border-2 transition-all ${isNoteMode ? 'bg-slate-800 border-slate-800 text-white shadow-inner' : 'bg-white border-slate-100 text-slate-500'}`}>
                                 <Icon name="pen-tool" size={20} />
-                                <span className="text-[10px] font-black mt-1 uppercase">Notes {isNoteMode ? 'ON' : 'OFF'}</span>
+                                <span className="text-[10px] font-black mt-1 uppercase tracking-widest">Notes {isNoteMode ? 'ON' : 'OFF'}</span>
                             </button>
                             <button onClick={() => { 
                                 const [r, c] = selectedCell;
@@ -334,7 +329,6 @@
                                 if (grid[r][c] === 0) {
                                     const val = solution[r][c];
                                     const g = [...grid]; g[r][c] = val; setGrid(g);
-                                    // Cleanup notes for hint
                                     const n = [...notes];
                                     for(let i=0; i<9; i++) {
                                         n[r][i] = n[r][i].filter(x => x !== val);
@@ -349,8 +343,8 @@
                         </div>
                     </div>
 
-                    <div className="flex justify-center mt-1">
-                        <Icon name="heart" size={14} className="text-rose-400" fill="currentColor" />
+                    <div className="flex justify-center mt-auto pb-1">
+                        <p className="text-[9px] text-slate-400 font-medium tracking-wide">© Arka Sarkar 2026</p>
                     </div>
                 </div>
             );
