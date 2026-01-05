@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sarkar Sudoku Saga</title>
     <!-- Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -13,15 +13,59 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase SDKs (Required for Streak Database) -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
-
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #fdfbf7; }
-        .sudoku-container { max-width: 500px; width: 100%; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #fdfbf7; 
+            overscroll-behavior: none; /* Prevents bounce scroll on mobile */
+            overflow: hidden;
+            position: fixed; /* Prevents the whole page from moving */
+            width: 100%;
+            height: 100%;
+        }
+
+        .app-container {
+            height: 100vh;
+            height: -webkit-fill-available; /* Fix for mobile browser toolbars */
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .sudoku-grid-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 0; /* Important for flex-shrink */
+        }
+
+        .sudoku-grid {
+            aspect-ratio: 1 / 1;
+            width: 100%;
+            max-width: min(85vw, 400px);
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            background-color: #1e293b; /* slate-800 */
+            gap: 1px;
+            border: 2px solid #1e293b;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .cell {
+            background-color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
     </style>
 </head>
 <body>
@@ -30,42 +74,11 @@
     <script type="text/babel">
         const { useState, useEffect, useCallback, useMemo } = React;
 
-        // --- CONFIGURATION SECTION ---
-        // If you are hosting on GitHub and want to save streaks to the cloud,
-        // create a Firebase project and paste your config object here:
-        // const myCustomConfig = { apiKey: "...", authDomain: "...", ... };
-        const myCustomConfig = null; 
-
-        let firebaseConfig = null;
-        try {
-            if (myCustomConfig) {
-                firebaseConfig = myCustomConfig;
-            } else if (typeof __firebase_config !== 'undefined') {
-                firebaseConfig = JSON.parse(__firebase_config);
-            }
-        } catch (e) {
-            console.error("Firebase config error:", e);
-        }
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'sarkar-sudoku-saga';
-        
-        // Initialize Firebase only if config is available
-        let auth = null;
-        let db = null;
-        if (firebaseConfig && firebaseConfig.apiKey) {
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
-            auth = firebase.auth();
-            db = firebase.firestore();
-        }
-
-        const Icon = ({ name, size = 20, className = "", fill = "none" }) => {
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, stroke: 'currentColor', fill: fill }}></i>;
-        };
+        const Icon = ({ name, size = 18, className = "", fill = "none" }) => (
+            <i data-lucide={name} className={className} style={{ width: size, height: size, stroke: 'currentColor', fill: fill }}></i>
+        );
 
         const App = () => {
-            const [user, setUser] = useState(null);
             const [grid, setGrid] = useState(Array(9).fill(null).map(() => Array(9).fill(0)));
             const [initialGrid, setInitialGrid] = useState(Array(9).fill(null).map(() => Array(9).fill(0)));
             const [solution, setSolution] = useState(Array(9).fill(null).map(() => Array(9).fill(0)));
@@ -75,53 +88,20 @@
             const [difficulty, setDifficulty] = useState('Easy');
             const [isGameWon, setIsGameWon] = useState(false);
             const [mistakes, setMistakes] = useState(0);
-            
-            // Streak State
             const [streak, setStreak] = useState(0);
             const [lastCompletedDate, setLastCompletedDate] = useState("");
 
-            // 1. Initialize Auth / Local Loading
+            // Load Streak from Local Storage
             useEffect(() => {
-                if (auth) {
-                    const initAuth = async () => {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                    };
-                    initAuth();
-                    const unsubscribe = auth.onAuthStateChanged(setUser);
-                    return () => unsubscribe();
-                } else {
-                    // Fallback to local storage if no Firebase
-                    const saved = localStorage.getItem('sudoku_saga_stats');
-                    if (saved) {
-                        const data = JSON.parse(saved);
-                        setStreak(data.streak || 0);
-                        setLastCompletedDate(data.lastDate || "");
-                    }
+                const saved = localStorage.getItem('sarkar_sudoku_saga_v2');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    setStreak(data.streak || 0);
+                    setLastCompletedDate(data.lastDate || "");
                 }
             }, []);
 
-            // 2. Load Streak Stats from Database
-            useEffect(() => {
-                if (!user || !db) return;
-                const statsRef = db.doc(`artifacts/${appId}/users/${user.uid}/stats/gameStats`);
-                const unsubscribe = statsRef.onSnapshot((doc) => {
-                    if (doc.exists) {
-                        const data = doc.data();
-                        setStreak(data.streak || 0);
-                        setLastCompletedDate(data.lastDate || "");
-                    }
-                });
-                return () => unsubscribe();
-            }, [user]);
-
-            // 3. Refresh Lucide Icons
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            });
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
 
             const isValid = (board, row, col, num) => {
                 for (let x = 0; x < 9; x++) if (board[row][x] === num) return false;
@@ -137,7 +117,7 @@
                 for (let r = 0; r < 9; r++) {
                     for (let c = 0; c < 9; c++) {
                         if (board[r][c] === 0) {
-                            const nums = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
+                            const nums = [1,2,3,4,5,6,7,8,9].sort(() => Math.random() - 0.5);
                             for (let n of nums) {
                                 if (isValid(board, r, c, n)) {
                                     board[r][c] = n;
@@ -156,9 +136,8 @@
                 const newBoard = Array(9).fill(null).map(() => Array(9).fill(0));
                 solveSudoku(newBoard);
                 setSolution(newBoard.map(row => [...row]));
-
                 const puzzle = newBoard.map(row => [...row]);
-                let count = level === 'Easy' ? 35 : level === 'Medium' ? 45 : 55;
+                let count = level === 'Easy' ? 32 : level === 'Medium' ? 44 : 54;
                 while (count > 0) {
                     let r = Math.floor(Math.random() * 9), c = Math.floor(Math.random() * 9);
                     if (puzzle[r][c] !== 0) { puzzle[r][c] = 0; count--; }
@@ -166,33 +145,24 @@
                 setGrid(puzzle);
                 setInitialGrid(JSON.parse(JSON.stringify(puzzle)));
                 setNotes(Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])));
-                setIsGameWon(false);
-                setMistakes(0);
+                setIsGameWon(false); setMistakes(0);
             }, []);
 
             useEffect(() => { generateGame(difficulty); }, [generateGame, difficulty]);
 
-            const handleWin = async () => {
+            const updateStreak = () => {
                 const today = new Date().toLocaleDateString('en-CA');
                 const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
-                
                 let newStreak = streak;
-                if (lastCompletedDate === today) { /* already done */ }
+                
+                if (lastCompletedDate === today) { /* same day, no change */ }
                 else if (lastCompletedDate === yesterday) { newStreak += 1; }
                 else { newStreak = 1; }
 
-                if (user && db) {
-                    await db.doc(`artifacts/${appId}/users/${user.uid}/stats/gameStats`).set({
-                        streak: newStreak,
-                        lastDate: today
-                    }, { merge: true });
-                } else {
-                    // Fallback to localStorage for GitHub Pages without Firebase
-                    localStorage.setItem('sudoku_saga_stats', JSON.stringify({ streak: newStreak, lastDate: today }));
-                    setStreak(newStreak);
-                    setLastCompletedDate(today);
-                }
-                setIsGameWon(true);
+                const data = { streak: newStreak, lastDate: today };
+                localStorage.setItem('sarkar_sudoku_saga_v2', JSON.stringify(data));
+                setStreak(newStreak);
+                setLastCompletedDate(today);
             };
 
             const handleInput = (num) => {
@@ -202,17 +172,32 @@
 
                 if (isNoteMode) {
                     const newNotes = [...notes];
-                    newNotes[r][c] = newNotes[r][c].includes(num) 
-                        ? newNotes[r][c].filter(n => n !== num) 
-                        : [...newNotes[r][c], num].sort();
+                    if (newNotes[r][c].includes(num)) {
+                        newNotes[r][c] = newNotes[r][c].filter(n => n !== num);
+                    } else {
+                        newNotes[r][c] = [...newNotes[r][c], num].sort();
+                    }
                     setNotes(newNotes);
                 } else {
                     if (num === solution[r][c]) {
                         const newGrid = [...grid];
                         newGrid[r][c] = num;
                         setGrid(newGrid);
+                        
+                        // Professional Note Cleanup
+                        const newNotes = [...notes];
+                        const sR = r - (r % 3), sC = c - (c % 3);
+                        for (let i = 0; i < 9; i++) {
+                            newNotes[r][i] = newNotes[r][i].filter(n => n !== num);
+                            newNotes[i][c] = newNotes[i][c].filter(n => n !== num);
+                            const bi = sR + Math.floor(i / 3), bj = sC + (i % 3);
+                            newNotes[bi][bj] = newNotes[bi][bj].filter(n => n !== num);
+                        }
+                        setNotes(newNotes);
+
                         if (newGrid.every((row, ri) => row.every((cell, ci) => cell === solution[ri][ci]))) {
-                            handleWin();
+                            updateStreak();
+                            setIsGameWon(true);
                         }
                     } else {
                         setMistakes(prev => prev + 1);
@@ -228,106 +213,145 @@
             }, [streak, lastCompletedDate]);
 
             return (
-                <div className="min-h-screen flex flex-col items-center py-6 px-4">
-                    <header className="text-center mb-6">
-                        <h1 className="text-3xl md:text-4xl font-black text-slate-800 tracking-tight">SARKAR SUDOKU SAGA</h1>
-                        <p className="text-slate-500 font-medium italic mt-1">A classic challenge for the mind</p>
-                        <div className="flex gap-2 mt-4 justify-center">
+                <div className="app-container">
+                    {/* Header bar */}
+                    <div className="flex justify-between items-center mb-1">
+                        <div>
+                            <h1 className="text-lg font-black text-slate-800 leading-tight">SARKAR SUDOKU</h1>
+                            <p className="text-[10px] text-slate-400 font-bold italic tracking-tight">For Punam with Love</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="text-right">
+                                <p className="text-[8px] font-bold text-slate-400 uppercase">Streak</p>
+                                <div className="flex items-center gap-1 leading-none">
+                                    <span className="text-sm font-black text-orange-500">{displayStreak}</span>
+                                    <Icon name="flame" size={14} className="text-orange-500" fill="currentColor" />
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[8px] font-bold text-slate-400 uppercase">Errors</p>
+                                <span className={`text-sm font-black leading-none ${mistakes > 0 ? 'text-red-500' : 'text-slate-800'}`}>{mistakes}/5</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Controls Row */}
+                    <div className="flex justify-between items-center my-2 h-8">
+                        <div className="flex gap-1">
                             {['Easy', 'Medium', 'Hard'].map(lvl => (
-                                <button key={lvl} onClick={() => setDifficulty(lvl)} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition ${difficulty === lvl ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                                <button key={lvl} onClick={() => setDifficulty(lvl)} className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase ${difficulty === lvl ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-slate-400 border border-slate-200'}`}>
                                     {lvl}
                                 </button>
                             ))}
                         </div>
-                    </header>
+                        <button onClick={() => generateGame(difficulty)} className="text-slate-400 active:text-slate-800 p-2">
+                            <Icon name="rotate-ccw" size={18} />
+                        </button>
+                    </div>
 
-                    <main className="flex flex-col lg:flex-row gap-8 items-start max-w-5xl w-full justify-center">
-                        <div className="flex flex-col gap-3 w-full lg:w-44 order-2 lg:order-1">
-                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 text-center">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mistakes</p>
-                                <p className={`text-2xl font-black ${mistakes > 0 ? 'text-red-500' : 'text-slate-800'}`}>{mistakes}/5</p>
-                            </div>
-                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Daily Streak</p>
-                                <div className="flex items-center gap-2">
-                                    <p className="text-2xl font-black text-orange-500">{displayStreak}</p>
-                                    <Icon name="flame" size={20} className="text-orange-500" fill="currentColor" />
-                                </div>
-                            </div>
-                            <button onClick={() => generateGame(difficulty)} className="flex items-center justify-center gap-2 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:bg-slate-50 transition font-bold text-slate-700 text-sm">
-                                <Icon name="rotate-ccw" size={16} /> New Puzzle
-                            </button>
-                        </div>
+                    {/* Sudoku Grid */}
+                    <div className="sudoku-grid-wrapper">
+                        <div className="sudoku-grid relative">
+                            {grid.map((row, r) => row.map((cell, c) => {
+                                const isSelected = selectedCell[0] === r && selectedCell[1] === c;
+                                const isSameRC = selectedCell[0] === r || selectedCell[1] === c;
+                                const isInitial = initialGrid[r][c] !== 0;
+                                
+                                let bgClass = isSelected ? "bg-blue-500" : (isSameRC ? "bg-slate-50" : "bg-white");
+                                let textClass = isInitial ? "text-slate-900 font-bold" : (isSelected ? "text-white font-bold" : "text-blue-600");
+                                
+                                let borders = "";
+                                if (r % 3 === 0) borders += " border-t-[1.5px] border-t-slate-800";
+                                if (c % 3 === 0) borders += " border-l-[1.5px] border-l-slate-800";
+                                if (r === 8) borders += " border-b-[1.5px] border-b-slate-800";
+                                if (c === 8) borders += " border-r-[1.5px] border-r-slate-800";
 
-                        <div className="sudoku-container relative order-1 lg:order-2">
-                            <div className="grid grid-cols-9 bg-slate-800 p-[1px] shadow-xl border-2 border-slate-800">
-                                {grid.map((row, r) => row.map((cell, c) => {
-                                    const isSelected = selectedCell[0] === r && selectedCell[1] === c;
-                                    const isSameRC = selectedCell[0] === r || selectedCell[1] === c;
-                                    const isInitial = initialGrid[r][c] !== 0;
-                                    let bg = isSelected ? "bg-blue-500 text-white" : (isSameRC ? "bg-slate-50" : "bg-white");
-                                    let borders = "border-slate-200 border-[0.5px] ";
-                                    if (r % 3 === 0) borders += "border-t-2 border-t-slate-800 ";
-                                    if (c % 3 === 0) borders += "border-l-2 border-l-slate-800 ";
-                                    if (r === 8) borders += "border-b-2 border-b-slate-800 ";
-                                    if (c === 8) borders += "border-r-2 border-r-slate-800 ";
+                                return (
+                                    <div key={`${r}-${c}`} onClick={() => setSelectedCell([r, c])} className={`cell ${bgClass} ${textClass} ${borders} text-xl sm:text-2xl`}>
+                                        {cell !== 0 ? cell : (
+                                            <div className="grid grid-cols-3 w-full h-full p-0.5">
+                                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                                    <div key={n} className="text-[7px] leading-none text-slate-400 flex items-center justify-center">
+                                                        {notes[r][c].includes(n) ? n : ''}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }))}
 
-                                    return (
-                                        <div key={`${r}-${c}`} onClick={() => setSelectedCell([r, c])} className={`relative flex items-center justify-center text-xl md:text-2xl cursor-pointer aspect-square ${bg} ${borders} ${isInitial ? 'font-bold text-slate-900' : (isSelected ? 'text-white' : 'text-blue-600')}`}>
-                                            {cell !== 0 ? cell : (
-                                                <div className="grid grid-cols-3 w-full h-full p-0.5 pointer-events-none">
-                                                    {[1,2,3,4,5,6,7,8,9].map(n => <div key={n} className="text-[8px] md:text-[10px] text-slate-400 flex items-center justify-center">{notes[r][c].includes(n) ? n : ''}</div>)}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                }))}
-                            </div>
+                            {/* Overlays */}
                             {isGameWon && (
                                 <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-20">
-                                    <Icon name="trophy" size={48} className="text-yellow-400 mb-4" />
-                                    <h2 className="text-3xl font-black text-slate-800 uppercase">Saga Complete!</h2>
-                                    <button onClick={() => generateGame(difficulty)} className="mt-6 bg-slate-800 text-white px-10 py-3 rounded-full font-bold">Play Again</button>
+                                    <Icon name="trophy" size={48} className="text-yellow-400 mb-2" />
+                                    <h2 className="text-2xl font-black text-slate-800">SAGA COMPLETE</h2>
+                                    <button onClick={() => generateGame(difficulty)} className="mt-4 bg-slate-800 text-white px-8 py-2 rounded-full font-bold shadow-lg">New Puzzle</button>
                                 </div>
                             )}
-                            {mistakes >= 5 && !isGameWon && (
+                            {mistakes >= 5 && (
                                 <div className="absolute inset-0 bg-red-50/95 flex flex-col items-center justify-center z-20">
-                                    <h2 className="text-3xl font-black text-red-600 uppercase tracking-tighter">Saga Over</h2>
-                                    <button onClick={() => generateGame(difficulty)} className="mt-6 bg-red-600 text-white px-10 py-3 rounded-full font-bold">Restart</button>
+                                    <h2 className="text-2xl font-black text-red-600">SAGA OVER</h2>
+                                    <button onClick={() => generateGame(difficulty)} className="mt-4 bg-red-600 text-white px-8 py-2 rounded-full font-bold shadow-lg">Restart</button>
                                 </div>
                             )}
                         </div>
+                    </div>
 
-                        <div className="flex flex-col gap-4 w-full lg:w-64 order-3">
-                            <div className="grid grid-cols-3 gap-2">
-                                {[1,2,3,4,5,6,7,8,9].map(num => (
-                                    <button key={num} onClick={() => handleInput(num)} className="h-14 md:h-16 bg-white rounded-2xl border border-slate-100 text-xl font-black text-blue-600 active:scale-90 transition-all">
-                                        {num}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => setIsNoteMode(!isNoteMode)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition ${isNoteMode ? 'bg-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}>
-                                    <Icon name="pen-tool" size={18} className="mb-1" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Notes {isNoteMode ? 'ON' : 'OFF'}</span>
+                    {/* Control Panel */}
+                    <div className="mt-auto space-y-4 pt-4 pb-2">
+                        {/* Number Pad */}
+                        <div className="grid grid-cols-9 gap-1 mx-auto max-w-full">
+                            {[1,2,3,4,5,6,7,8,9].map(num => (
+                                <button 
+                                    key={num} 
+                                    onClick={() => handleInput(num)} 
+                                    className="aspect-square flex items-center justify-center bg-white rounded-lg border border-slate-200 text-xl font-bold text-blue-600 active:bg-blue-500 active:text-white active:scale-95 transition-all shadow-sm"
+                                >
+                                    {num}
                                 </button>
-                                <button onClick={() => { if (initialGrid[selectedCell[0]][selectedCell[1]] === 0) { const g = [...grid]; g[selectedCell[0]][selectedCell[1]] = 0; setGrid(g); }}} className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-slate-100 text-slate-600">
-                                    <Icon name="eraser" size={18} className="mb-1" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Erase</span>
-                                </button>
-                            </div>
-                            <button onClick={() => { if (grid[selectedCell[0]][selectedCell[1]] === 0) { const g = [...grid]; g[selectedCell[0]][selectedCell[1]] = solution[selectedCell[0]][selectedCell[1]]; setGrid(g); }}} className="flex items-center justify-center gap-2 w-full p-4 bg-blue-50 rounded-2xl text-blue-700 font-bold">
-                                <Icon name="lightbulb" size={18} /> Use Hint
+                            ))}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="grid grid-cols-3 gap-3 mx-auto max-w-full">
+                            <button onClick={() => setIsNoteMode(!isNoteMode)} className={`flex flex-col items-center py-3 rounded-2xl border-2 transition-all ${isNoteMode ? 'bg-slate-800 border-slate-800 text-white shadow-inner' : 'bg-white border-slate-100 text-slate-500'}`}>
+                                <Icon name="pen-tool" size={20} />
+                                <span className="text-[10px] font-black mt-1 uppercase">Notes {isNoteMode ? 'ON' : 'OFF'}</span>
+                            </button>
+                            <button onClick={() => { 
+                                const [r, c] = selectedCell;
+                                if (initialGrid[r][c] === 0) {
+                                    if (grid[r][c] !== 0) { const g = [...grid]; g[r][c] = 0; setGrid(g); }
+                                    else { const n = [...notes]; n[r][c] = []; setNotes(n); }
+                                }
+                            }} className="flex flex-col items-center py-3 bg-white rounded-2xl border-2 border-slate-100 text-slate-500 active:bg-slate-50">
+                                <Icon name="eraser" size={20} />
+                                <span className="text-[10px] font-black mt-1 uppercase tracking-tight">Erase</span>
+                            </button>
+                            <button onClick={() => { 
+                                const [r, c] = selectedCell;
+                                if (grid[r][c] === 0) {
+                                    const val = solution[r][c];
+                                    const g = [...grid]; g[r][c] = val; setGrid(g);
+                                    // Cleanup notes for hint
+                                    const n = [...notes];
+                                    for(let i=0; i<9; i++) {
+                                        n[r][i] = n[r][i].filter(x => x !== val);
+                                        n[i][c] = n[i][c].filter(x => x !== val);
+                                    }
+                                    setNotes(n);
+                                }
+                            }} className="flex flex-col items-center py-3 bg-blue-50 rounded-2xl border-2 border-blue-100 text-blue-600 active:bg-blue-100">
+                                <Icon name="lightbulb" size={20} />
+                                <span className="text-[10px] font-black mt-1 uppercase tracking-tight">Hint</span>
                             </button>
                         </div>
-                    </main>
+                    </div>
 
-                    <footer className="mt-12 flex flex-col items-center gap-2">
-                        <div className="flex items-center gap-2 text-rose-500 font-bold text-lg">
-                            <span>For Punam with Love</span>
-                            <Icon name="heart" size={20} fill="currentColor" />
-                        </div>
-                    </footer>
+                    <div className="flex justify-center mt-1">
+                        <Icon name="heart" size={14} className="text-rose-400" fill="currentColor" />
+                    </div>
                 </div>
             );
         };
